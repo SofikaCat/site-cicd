@@ -1,24 +1,65 @@
-name: Deploy static site
+name: Deploy site
+
 on:
- push:
- branches: [ main ]
-permissions:
- contents: read
- pages: write
- id-token: write
+  push:
+    branches: [ main ]
+
 jobs:
- deploy:
- runs-on: ubuntu-latest
- environment:
- name: github-pages
- url: ${{ steps.deployment.outputs.page_url }}
- steps:
- - name: Checkout repository
- uses: actions/checkout@v4
- - name: Setup Pages
- uses: actions/configure-pages@v5
- - name: Upload artifact
- uses: actions/upload-pages-artifact@v3
+  lint:
+    name: Проверка HTML и CSS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Установить линтеры
+        run: npm install --no-save html-validate stylelint stylelint-config-standard
+
+      - name: Линтинг HTML
+        run: npx html-validate "index.html"
+
+      - name: Линтинг CSS (стили встроены в HTML)
+        run: |
+          # Вытаскиваем содержимое <style> во временный файл и проверяем его
+          node -e "
+            const fs = require('fs');
+            const html = fs.readFileSync('index.html', 'utf8');
+            const css = html.match(/<style>([\s\S]*?)<\/style>/);
+            fs.writeFileSync('styles-check.css', css ? css[1] : '');
+          "
+          npx stylelint "styles-check.css" --config .stylelintrc.json
+
+  deploy:
+    name: Деплой на GitHub Pages
+    needs: lint          # деплой запустится только если линтинг прошёл
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Настроить Pages
+        uses: actions/configure-pages@v5
+
+      - name: Загрузить артефакт
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Развернуть
+        id: deployment
+        uses: actions/deploy-pages@v4
  with:
  path: '.'
  - name: Deploy to GitHub Pages
